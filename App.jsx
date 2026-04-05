@@ -1,11 +1,15 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 
 // ════════════════════════════════════════════════════════════
 //  CONSTANTS & CONFIGURATION
 // ════════════════════════════════════════════════════════════
-const BRAND_NAME = "trading Checklist pro ";
-const ADMIN_PASS = "Arttrader888@"; // รหัสผ่าน Admin
-const POLL_MS    = 4000; 
+const BRAND_NAME = "Trading Checklist Pro";
+const POLL_MS = 4000; 
+
+// วิธีที่ถูกต้องในการเก็บรหัสผ่านสำหรับ Frontend คือใช้ Environment Variable
+// เช่น ใน Vite ให้สร้างไฟล์ .env และใส่ VITE_ADMIN_PASS=Arttrader888@
+// แต่ถ้าคุณยังไม่มี Backend หรือ .env นี่คือตัวแปรที่รับค่าจาก .env ครับ
+const ADMIN_PASS = import.meta.env?.VITE_ADMIN_PASS || "Arttrader888@"; 
 
 const SYMBOLS = {
   XAUUSD: { 
@@ -19,23 +23,6 @@ const SYMBOLS = {
 };
 
 const G = "#00ff88", R = "#ff4466";
-
-// ════════════════════════════════════════════════════════════
-//  STORAGE HELPERS (For Vercel / Local Browser)
-// ════════════════════════════════════════════════════════════
-const sget = async (key) => {
-  try {
-    const r = localStorage.getItem(key);
-    return r ? JSON.parse(r) : null;
-  } catch { return null; }
-};
-
-const sset = async (key, val) => {
-  try {
-    localStorage.setItem(key, JSON.stringify(val));
-    return true;
-  } catch { return false; }
-};
 
 // ════════════════════════════════════════════════════════════
 //  COMPONENTS
@@ -114,7 +101,7 @@ export default function App() {
   const [spread, setSpread] = useState(SYMBOLS.XAUUSD.spread);
   const [slPips, setSlPips] = useState(50);
   const [tpPips, setTpPips] = useState(100);
-  const [balance, setBalance] = useState(10000);
+  const [balance, setBalance] = useState(10000); // จำลอง Balance เริ่มต้น
   const [riskPct, setRiskPct] = useState(1);
   const [direction, setDirection] = useState("BUY");
 
@@ -145,6 +132,15 @@ export default function App() {
     color: "#fff", fontFamily: "monospace", boxSizing: "border-box" 
   };
 
+  const handleLogin = () => {
+    if (passInput === ADMIN_PASS) {
+      setAdminAuth(true);
+      setPassInput(""); // เคลียร์รหัสออกจากช่องเพื่อความปลอดภัย
+    } else {
+      alert("รหัสผ่านไม่ถูกต้อง!");
+    }
+  };
+
   return (
     <div style={{ minHeight: "100vh", color: "#dde", position: "relative" }}>
       <SpaceBackground />
@@ -153,7 +149,7 @@ export default function App() {
         
         {/* Branding */}
         <header style={{ textAlign: "center", marginBottom: "25px" }}>
-          <h1 style={{ color: sym.color, fontSize: "28px", margin: 0, letterSpacing: "2px" }}>{BRAND_NAME}</h1>
+          <h1 style={{ color: sym.color, fontSize: "28px", margin: 0, letterSpacing: "2px", textTransform: "uppercase" }}>{BRAND_NAME}</h1>
           <p style={{ fontSize: "10px", color: "#556" }}>ADVANCED TRADING TERMINAL</p>
           
           <div style={{ display: "flex", gap: "10px", justifyContent: "center", marginTop: "15px" }}>
@@ -161,7 +157,7 @@ export default function App() {
               <button key={s} onClick={() => setSym(s)} style={{
                 padding: "8px 20px", borderRadius: "20px", border: `1px solid ${SYMBOLS[s].color}`,
                 background: symbol === s ? SYMBOLS[s].color : "transparent",
-                color: symbol === s ? "#000" : "#fff", cursor: "pointer", fontWeight: "bold"
+                color: symbol === s ? "#000" : "#fff", cursor: "pointer", fontWeight: "bold", transition: "0.3s"
               }}>
                 {SYMBOLS[s].icon} {SYMBOLS[s].label}
               </button>
@@ -179,9 +175,11 @@ export default function App() {
         {/* Content Pages */}
         {page === "chart" && (
           <GlassCard style={{ overflow: "hidden" }}>
+            {/* อัปเดตพารามิเตอร์ Iframe ให้รองรับ Advanced Widget */}
             <iframe 
-              src={`https://s.tradingview.com/widgetembed/?symbol=${sym.tv}&interval=H1&hidesidetoolbar=1&theme=dark&style=1&timezone=Asia/Bangkok`}
+              src={`https://s.tradingview.com/widgetembed/?symbol=${sym.tv}&interval=H1&hidesidetoolbar=1&symboledit=1&saveimage=1&toolbarbg=f1f3f6&theme=dark&style=1&timezone=Asia/Bangkok`}
               style={{ width: "100%", height: "400px", border: "none" }}
+              title="TradingView Chart"
             />
           </GlassCard>
         )}
@@ -196,19 +194,19 @@ export default function App() {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "15px" }}>
               <div style={inputGroupStyle}>
                 <label style={labelStyle}>ราคาเข้า (Entry)</label>
-                <input type="number" value={entry} onChange={e => setEntry(e.target.value)} style={inputStyle} />
+                <input type="number" value={entry} onChange={e => setEntry(Number(e.target.value))} style={inputStyle} />
               </div>
               <div style={inputGroupStyle}>
                 <label style={{...labelStyle, color: sym.color}}>สเปรด (Spread Pips)</label>
-                <input type="number" value={spread} onChange={e => setSpread(e.target.value)} style={{...inputStyle, borderColor: sym.color}} />
+                <input type="number" value={spread} onChange={e => setSpread(Number(e.target.value))} style={{...inputStyle, borderColor: sym.color}} />
               </div>
               <div style={inputGroupStyle}>
                 <label style={labelStyle}>Stop Loss (Pips)</label>
-                <input type="number" value={slPips} onChange={e => setSlPips(e.target.value)} style={inputStyle} />
+                <input type="number" value={slPips} onChange={e => setSlPips(Number(e.target.value))} style={inputStyle} />
               </div>
               <div style={inputGroupStyle}>
                 <label style={labelStyle}>Take Profit (Pips)</label>
-                <input type="number" value={tpPips} onChange={e => setTpPips(e.target.value)} style={inputStyle} />
+                <input type="number" value={tpPips} onChange={e => setTpPips(Number(e.target.value))} style={inputStyle} />
               </div>
             </div>
 
@@ -231,26 +229,31 @@ export default function App() {
                 <input 
                   type="password" 
                   placeholder="รหัสผ่าน..." 
+                  value={passInput}
                   style={{...inputStyle, textAlign: "center", marginBottom: "15px"}} 
                   onChange={(e) => setPassInput(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
                 />
                 <button 
-                  onClick={() => passInput === ADMIN_PASS ? setAdminAuth(true) : alert("รหัสผิด!")}
-                  style={{ width: "100%", padding: "12px", background: sym.color, border: "none", borderRadius: "6px", fontWeight: "bold", cursor: "pointer" }}
+                  onClick={handleLogin}
+                  style={{ width: "100%", padding: "12px", background: sym.color, border: "none", borderRadius: "6px", fontWeight: "bold", cursor: "pointer", color: "#000" }}
                 >เข้าสู่ระบบ</button>
               </div>
             ) : (
               <div>
                 <h3 style={{ color: G, marginBottom: "10px" }}>โหมดแอดมิน (Full Tools)</h3>
-                <p style={{ fontSize: "12px", color: "#889", marginBottom: "15px" }}>คุณสามารถใช้เครื่องมือวาดรูปและ Indicators ได้เต็มรูปแบบ</p>
+                <p style={{ fontSize: "12px", color: "#889", marginBottom: "15px" }}>
+                  * การตีเส้นใน Widget ฟรียังไม่สามารถ Sync ให้หน้าจอของคนอื่นเห็นได้แบบ Real-time ครับ หากต้องการฟีเจอร์นั้นจะต้องมีการเขียนเชื่อมต่อ WebSockets คู่กับ Firebase แยกต่างหาก
+                </p>
                 <iframe 
-                  src={`https://s.tradingview.com/widgetembed/?symbol=${sym.tv}&interval=H1&hidesidetoolbar=0&theme=dark&style=1&withdateranges=1`}
+                  src={`https://s.tradingview.com/widgetembed/?symbol=${sym.tv}&interval=H1&hidesidetoolbar=0&theme=dark&style=1&withdateranges=1&details=1`}
                   style={{ width: "100%", height: "450px", border: "none", borderRadius: "8px" }}
+                  title="TradingView Admin Chart"
                 />
                 <button 
                   onClick={() => setAdminAuth(false)} 
-                  style={{ width: "100%", marginTop: "15px", padding: "10px", background: "transparent", border: `1px solid ${R}`, color: R, borderRadius: "6px", cursor: "pointer" }}
-                >Logout</button>
+                  style={{ width: "100%", marginTop: "15px", padding: "10px", background: "transparent", border: `1px solid ${R}`, color: R, borderRadius: "6px", cursor: "pointer", fontWeight: "bold" }}
+                >ออกจากระบบ (Logout)</button>
               </div>
             )}
           </GlassCard>
@@ -259,4 +262,4 @@ export default function App() {
       </div>
     </div>
   );
-}
+    }
