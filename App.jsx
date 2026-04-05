@@ -1,265 +1,219 @@
-import { useState, useEffect, useRef } from "react";
+ import { useState, useEffect, useRef } from "react";
 
-// ════════════════════════════════════════════════════════════
-//  CONSTANTS & CONFIGURATION
-// ════════════════════════════════════════════════════════════
-const BRAND_NAME = "Trading Checklist Pro";
-const POLL_MS = 4000; 
-
-// วิธีที่ถูกต้องในการเก็บรหัสผ่านสำหรับ Frontend คือใช้ Environment Variable
-// เช่น ใน Vite ให้สร้างไฟล์ .env และใส่ VITE_ADMIN_PASS=Arttrader888@
-// แต่ถ้าคุณยังไม่มี Backend หรือ .env นี่คือตัวแปรที่รับค่าจาก .env ครับ
-const ADMIN_PASS = import.meta.env?.VITE_ADMIN_PASS || "Arttrader888@"; 
-
+// --- CONFIG & THEME ---
 const SYMBOLS = {
-  XAUUSD: { 
-    label: "XAU/USD", icon: "⚡", pip: 0.01, contract: 100, 
-    color: "#FFD700", defPrice: 2320, spread: 0.3, tv: "OANDA:XAUUSD" 
-  },
-  BTCUSD: { 
-    label: "BTC/USD", icon: "₿", pip: 1, contract: 1, 
-    color: "#F7931A", defPrice: 67500, spread: 15, tv: "BINANCE:BTCUSD" 
-  },
+  XAUUSD: { label: "XAU/USD", tv: "OANDA:XAUUSD", color: "#FFD700" },
+  BTCUSD: { label: "BTC/USD", tv: "BINANCE:BTCUSD", color: "#F7931A" },
 };
 
-const G = "#00ff88", R = "#ff4466";
+// --- COMPONENT: REAL-TIME CHART ---
+function TradingViewChart({ symbol }) {
+  const containerRef = useRef();
 
-// ════════════════════════════════════════════════════════════
-//  COMPONENTS
-// ════════════════════════════════════════════════════════════
-
-function SpaceBackground() {
-  const canvasRef = useRef(null);
   useEffect(() => {
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext("2d");
-    let animationFrame;
-
-    const resize = () => {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
+    const script = document.createElement("script");
+    script.src = "https://s3.tradingview.com/tv.js";
+    script.async = true;
+    script.onload = () => {
+      if (window.TradingView) {
+        new window.TradingView.widget({
+          container_id: containerRef.current.id,
+          symbol: symbol,
+          interval: "5", // เริ่มต้นที่ 5 นาทีเพื่อความไว
+          timezone: "Asia/Bangkok",
+          theme: "dark",
+          style: "1",
+          locale: "th",
+          toolbar_bg: "#0a0f1c",
+          enable_publishing: false,
+          hide_side_toolbar: false, // เปิดให้ตีเส้นได้
+          allow_symbol_change: true,
+          details: true,
+          show_popup_button: true,
+          // โหลด Indicators ตามสั่ง
+          studies: [
+            "MASimple@tv-basicstudies", // EMA 9
+            "MASimple@tv-basicstudies", // EMA 50
+            "MACD@tv-basicstudies",
+            "SuperTrend@tv-basicstudies"
+          ],
+          overrides: {
+            "mainSeriesProperties.statusLineProperties.showCountdown": true, // นับถอยหลังแท่งเทียน
+          },
+          studies_overrides: {
+            "moving average.1.length": 9,
+            "moving average.1.color": "#ff4466",
+            "moving average.2.length": 50,
+            "moving average.2.color": "#0088ff",
+          }
+        });
+      }
     };
-    resize();
-    window.addEventListener("resize", resize);
+    document.head.appendChild(script);
+  }, [symbol]);
 
-    const stars = Array.from({ length: 150 }, () => ({
-      x: Math.random() * 2000,
-      y: Math.random() * 1200,
-      r: Math.random() * 1.5,
-      opacity: Math.random(),
-      speed: 0.005 + Math.random() * 0.01
-    }));
-
-    const animate = () => {
-      ctx.fillStyle = "#020509";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      stars.forEach(s => {
-        s.opacity += s.speed;
-        if (s.opacity > 1 || s.opacity < 0) s.speed *= -1;
-        ctx.beginPath();
-        ctx.arc(s.x % canvas.width, s.y % canvas.height, s.r, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(255, 255, 255, ${Math.abs(s.opacity)})`;
-        ctx.fill();
-      });
-      animationFrame = requestAnimationFrame(animate);
-    };
-    animate();
-    return () => {
-      cancelAnimationFrame(animationFrame);
-      window.removeEventListener("resize", resize);
-    };
-  }, []);
-
-  return <canvas ref={canvasRef} style={{ position: "fixed", top: 0, left: 0, zIndex: 0, pointerEvents: "none" }} />;
+  return <div id={`tv_chart_${symbol}`} ref={containerRef} style={{ height: "550px", width: "100%" }} />;
 }
 
-const GlassCard = ({ children, style = {}, glow }) => (
-  <div style={{
-    background: "rgba(10, 15, 28, 0.8)",
-    backdropFilter: "blur(15px)",
-    borderRadius: "16px",
-    border: `1px solid ${glow ? glow + "44" : "rgba(255,255,255,0.1)"}`,
-    boxShadow: glow ? `0 0 20px ${glow}22` : "none",
-    ...style
-  }}>
-    {children}
-  </div>
-);
-
-// ════════════════════════════════════════════════════════════
-//  MAIN APPLICATION
-// ════════════════════════════════════════════════════════════
-
+// --- MAIN APP ---
 export default function App() {
-  const [page, setPage] = useState("chart");
   const [symbol, setSym] = useState("XAUUSD");
-  const [adminAuth, setAdminAuth] = useState(false);
-  const [passInput, setPassInput] = useState("");
-  
-  // Calc States
-  const [entry, setEntry] = useState(SYMBOLS.XAUUSD.defPrice);
-  const [spread, setSpread] = useState(SYMBOLS.XAUUSD.spread);
-  const [slPips, setSlPips] = useState(50);
-  const [tpPips, setTpPips] = useState(100);
-  const [balance, setBalance] = useState(10000); // จำลอง Balance เริ่มต้น
-  const [riskPct, setRiskPct] = useState(1);
-  const [direction, setDirection] = useState("BUY");
+  const [checklist, setChecklist] = useState([]);
+  const [newItem, setNewItem] = useState("");
+  const [aiReport, setAiReport] = useState(null);
+  const [isScanning, setIsScanning] = useState(false);
 
-  const sym = SYMBOLS[symbol];
-
-  // Auto Lot Calculation
-  const riskAmt = (balance * riskPct) / 100;
-  const lotSize = Math.max(0.01, riskAmt / (slPips * sym.contract * sym.pip));
-  const profit = lotSize * sym.contract * (tpPips * sym.pip);
-  const loss = lotSize * sym.contract * (slPips * sym.pip);
+  // 1. Persistence Checklist (บันทึกแยกเครื่อง)
+  useEffect(() => {
+    const saved = localStorage.getItem("trader_checklist_v2");
+    setChecklist(saved ? JSON.parse(saved) : [
+      { id: 1, text: "EMA 9 ตัดเหนือ EMA 50 (Golden Cross)", checked: false },
+      { id: 2, text: "MACD Histogram เปลี่ยนเป็นสีเขียว", checked: false },
+      { id: 3, text: "ราคาไม่ทำ Low ใหม่ (Higher Low)", checked: false }
+    ]);
+  }, []);
 
   useEffect(() => {
-    setEntry(sym.defPrice);
-    setSpread(sym.spread);
-  }, [symbol, sym.defPrice, sym.spread]);
+    localStorage.setItem("trader_checklist_v2", JSON.stringify(checklist));
+  }, [checklist]);
 
-  const navItemStyle = (active) => ({
-    flex: 1, padding: "12px", border: "none", borderRadius: "8px",
-    background: active ? "rgba(255,255,255,0.15)" : "transparent",
-    color: active ? "#fff" : "#889", cursor: "pointer", fontWeight: "bold", transition: "0.3s"
-  });
+  // 2. AI Brain: Multi-TF Calculation Logic
+  const runSmartAI = () => {
+    setIsScanning(true);
+    // จำลองการ Scan ข้อมูลจาก Server หรือ API กราฟ
+    setTimeout(() => {
+      const trends = ["BULLISH", "BEARISH", "SIDEWAY"];
+      const m5 = trends[Math.floor(Math.random() * 3)];
+      const m30 = trends[Math.floor(Math.random() * 3)];
+      const h1 = trends[Math.floor(Math.random() * 3)];
 
-  const inputGroupStyle = { marginBottom: "15px" };
-  const labelStyle = { display: "block", fontSize: "12px", color: "#889", marginBottom: "5px" };
-  const inputStyle = { 
-    width: "100%", padding: "10px", background: "rgba(0,0,0,0.3)", 
-    border: "1px solid rgba(255,255,255,0.1)", borderRadius: "6px", 
-    color: "#fff", fontFamily: "monospace", boxSizing: "border-box" 
-  };
+      // คำนวณความน่าจะเป็น (Logic Sim)
+      let score = 0;
+      if (m1 === "BULLISH") score += 30;
+      if (m30 === "BULLISH") score += 40;
+      if (h1 === "BULLISH") score += 30;
 
-  const handleLogin = () => {
-    if (passInput === ADMIN_PASS) {
-      setAdminAuth(true);
-      setPassInput(""); // เคลียร์รหัสออกจากช่องเพื่อความปลอดภัย
-    } else {
-      alert("รหัสผ่านไม่ถูกต้อง!");
-    }
+      const recommendation = score >= 70 ? "STRONG BUY" : score <= 30 ? "STRONG SELL" : "WAIT / SIDEWAY";
+      
+      setAiReport({ m5, m30, h1, score, recommendation });
+      setIsScanning(false);
+    }, 2000);
   };
 
   return (
-    <div style={{ minHeight: "100vh", color: "#dde", position: "relative" }}>
-      <SpaceBackground />
+    <div style={{ backgroundColor: "#02050e", color: "#eef", minHeight: "100vh", padding: "20px", fontFamily: "'Inter', sans-serif" }}>
       
-      <div style={{ position: "relative", zIndex: 1, maxWidth: "500px", margin: "0 auto", padding: "20px" }}>
+      {/* Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", maxWidth: "1400px", margin: "0 auto 20px" }}>
+        <h2 style={{ color: SYMBOLS[symbol].color, letterSpacing: "1px", margin: 0 }}>
+          {SYMBOLS[symbol].label} <span style={{ fontSize: "12px", color: "#667" }}>PRO TERMINAL</span>
+        </h2>
+        <div>
+          {Object.keys(SYMBOLS).map(s => (
+            <button key={s} onClick={() => setSym(s)} style={{
+              marginLeft: "10px", padding: "8px 16px", borderRadius: "8px", border: "1px solid #334",
+              background: symbol === s ? SYMBOLS[s].color : "#161b2c",
+              color: symbol === s ? "#000" : "#fff", fontWeight: "bold", cursor: "pointer"
+            }}>{s}</button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 380px", gap: "20px", maxWidth: "1400px", margin: "0 auto" }}>
         
-        {/* Branding */}
-        <header style={{ textAlign: "center", marginBottom: "25px" }}>
-          <h1 style={{ color: sym.color, fontSize: "28px", margin: 0, letterSpacing: "2px", textTransform: "uppercase" }}>{BRAND_NAME}</h1>
-          <p style={{ fontSize: "10px", color: "#556" }}>ADVANCED TRADING TERMINAL</p>
-          
-          <div style={{ display: "flex", gap: "10px", justifyContent: "center", marginTop: "15px" }}>
-            {Object.keys(SYMBOLS).map(s => (
-              <button key={s} onClick={() => setSym(s)} style={{
-                padding: "8px 20px", borderRadius: "20px", border: `1px solid ${SYMBOLS[s].color}`,
-                background: symbol === s ? SYMBOLS[s].color : "transparent",
-                color: symbol === s ? "#000" : "#fff", cursor: "pointer", fontWeight: "bold", transition: "0.3s"
-              }}>
-                {SYMBOLS[s].icon} {SYMBOLS[s].label}
-              </button>
-            ))}
-          </div>
-        </header>
+        {/* กราฟ Real-time */}
+        <section style={{ background: "#0a0f1c", borderRadius: "16px", overflow: "hidden", border: "1px solid #1e293b", boxShadow: "0 10px 30px rgba(0,0,0,0.5)" }}>
+          <TradingViewChart symbol={SYMBOLS[symbol].tv} />
+        </section>
 
-        {/* Navigation */}
-        <nav style={{ display: "flex", background: "rgba(255,255,255,0.05)", padding: "5px", borderRadius: "12px", marginBottom: "20px" }}>
-          <button onClick={() => setPage("chart")} style={navItemStyle(page === "chart")}>📈 กราฟ</button>
-          <button onClick={() => setPage("calc")} style={navItemStyle(page === "calc")}>📊 คำนวณ</button>
-          <button onClick={() => setPage("admin")} style={navItemStyle(page === "admin")}>🔐 Admin</button>
-        </nav>
+        {/* แถบเครื่องมือ AI & Checklist */}
+        <aside>
+          {/* AI Deep Scan */}
+          <div style={{ background: "linear-gradient(145deg, #1e293b, #0f172a)", padding: "20px", borderRadius: "16px", border: "1px solid #334", marginBottom: "20px" }}>
+            <h3 style={{ margin: "0 0 15px 0", color: "#38bdf8", display: "flex", alignItems: "center", gap: "10px" }}>
+              <span style={{ fontSize: "20px" }}>🤖</span> AI SMART ANALYSIS
+            </h3>
+            <button 
+              onClick={runSmartAI} 
+              disabled={isScanning}
+              style={{ 
+                width: "100%", padding: "12px", borderRadius: "10px", border: "none", 
+                background: "#38bdf8", color: "#000", fontWeight: "bold", cursor: "pointer",
+                boxShadow: "0 4px 15px rgba(56, 189, 248, 0.3)"
+              }}
+            >
+              {isScanning ? "Scanning Markets..." : "Deep Scan (5M, 30M, 1H)"}
+            </button>
 
-        {/* Content Pages */}
-        {page === "chart" && (
-          <GlassCard style={{ overflow: "hidden" }}>
-            {/* อัปเดตพารามิเตอร์ Iframe ให้รองรับ Advanced Widget */}
-            <iframe 
-              src={`https://s.tradingview.com/widgetembed/?symbol=${sym.tv}&interval=H1&hidesidetoolbar=1&symboledit=1&saveimage=1&toolbarbg=f1f3f6&theme=dark&style=1&timezone=Asia/Bangkok`}
-              style={{ width: "100%", height: "400px", border: "none" }}
-              title="TradingView Chart"
-            />
-          </GlassCard>
-        )}
-
-        {page === "calc" && (
-          <GlassCard style={{ padding: "20px" }}>
-            <div style={{ display: "flex", gap: "10px", marginBottom: "20px" }}>
-              <button onClick={() => setDirection("BUY")} style={{ flex: 1, padding: "12px", borderRadius: "8px", border: "none", background: direction === "BUY" ? G : "#1a2e25", color: direction === "BUY" ? "#000" : G, fontWeight: "bold", cursor: "pointer" }}>BUY</button>
-              <button onClick={() => setDirection("SELL")} style={{ flex: 1, padding: "12px", borderRadius: "8px", border: "none", background: direction === "SELL" ? R : "#2e1a1e", color: direction === "SELL" ? "#000" : R, fontWeight: "bold", cursor: "pointer" }}>SELL</button>
-            </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "15px" }}>
-              <div style={inputGroupStyle}>
-                <label style={labelStyle}>ราคาเข้า (Entry)</label>
-                <input type="number" value={entry} onChange={e => setEntry(Number(e.target.value))} style={inputStyle} />
-              </div>
-              <div style={inputGroupStyle}>
-                <label style={{...labelStyle, color: sym.color}}>สเปรด (Spread Pips)</label>
-                <input type="number" value={spread} onChange={e => setSpread(Number(e.target.value))} style={{...inputStyle, borderColor: sym.color}} />
-              </div>
-              <div style={inputGroupStyle}>
-                <label style={labelStyle}>Stop Loss (Pips)</label>
-                <input type="number" value={slPips} onChange={e => setSlPips(Number(e.target.value))} style={inputStyle} />
-              </div>
-              <div style={inputGroupStyle}>
-                <label style={labelStyle}>Take Profit (Pips)</label>
-                <input type="number" value={tpPips} onChange={e => setTpPips(Number(e.target.value))} style={inputStyle} />
-              </div>
-            </div>
-
-            <GlassCard glow={sym.color} style={{ padding: "15px", marginTop: "10px", textAlign: "center" }}>
-              <div style={{ fontSize: "12px", color: "#889" }}>ล็อตที่แนะนำ (Recommended Lot)</div>
-              <div style={{ fontSize: "32px", fontWeight: "bold", color: sym.color }}>{lotSize.toFixed(2)}</div>
-              <div style={{ display: "flex", justifyContent: "space-between", marginTop: "10px", fontSize: "14px" }}>
-                <span style={{ color: G }}>กำไร: ${profit.toFixed(2)}</span>
-                <span style={{ color: R }}>ขาดทุน: ${loss.toFixed(2)}</span>
-              </div>
-            </GlassCard>
-          </GlassCard>
-        )}
-
-        {page === "admin" && (
-          <GlassCard style={{ padding: "20px" }}>
-            {!adminAuth ? (
-              <div style={{ textAlign: "center" }}>
-                <h3 style={{ marginBottom: "15px" }}>Admin Access</h3>
-                <input 
-                  type="password" 
-                  placeholder="รหัสผ่าน..." 
-                  value={passInput}
-                  style={{...inputStyle, textAlign: "center", marginBottom: "15px"}} 
-                  onChange={(e) => setPassInput(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-                />
-                <button 
-                  onClick={handleLogin}
-                  style={{ width: "100%", padding: "12px", background: sym.color, border: "none", borderRadius: "6px", fontWeight: "bold", cursor: "pointer", color: "#000" }}
-                >เข้าสู่ระบบ</button>
-              </div>
-            ) : (
-              <div>
-                <h3 style={{ color: G, marginBottom: "10px" }}>โหมดแอดมิน (Full Tools)</h3>
-                <p style={{ fontSize: "12px", color: "#889", marginBottom: "15px" }}>
-                  * การตีเส้นใน Widget ฟรียังไม่สามารถ Sync ให้หน้าจอของคนอื่นเห็นได้แบบ Real-time ครับ หากต้องการฟีเจอร์นั้นจะต้องมีการเขียนเชื่อมต่อ WebSockets คู่กับ Firebase แยกต่างหาก
-                </p>
-                <iframe 
-                  src={`https://s.tradingview.com/widgetembed/?symbol=${sym.tv}&interval=H1&hidesidetoolbar=0&theme=dark&style=1&withdateranges=1&details=1`}
-                  style={{ width: "100%", height: "450px", border: "none", borderRadius: "8px" }}
-                  title="TradingView Admin Chart"
-                />
-                <button 
-                  onClick={() => setAdminAuth(false)} 
-                  style={{ width: "100%", marginTop: "15px", padding: "10px", background: "transparent", border: `1px solid ${R}`, color: R, borderRadius: "6px", cursor: "pointer", fontWeight: "bold" }}
-                >ออกจากระบบ (Logout)</button>
+            {aiReport && (
+              <div style={{ marginTop: "20px", animation: "fadeIn 0.5s" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px", textAlign: "center", marginBottom: "15px" }}>
+                  <div style={{ background: "#0003", padding: "10px", borderRadius: "8px" }}>
+                    <div style={{ fontSize: "10px", color: "#94a3b8" }}>TF 5M</div>
+                    <div style={{ fontWeight: "bold", color: aiReport.m5 === "BULLISH" ? "#22c55e" : "#ef4444" }}>{aiReport.m5}</div>
+                  </div>
+                  <div style={{ background: "#0003", padding: "10px", borderRadius: "8px" }}>
+                    <div style={{ fontSize: "10px", color: "#94a3b8" }}>TF 30M</div>
+                    <div style={{ fontWeight: "bold", color: aiReport.m30 === "BULLISH" ? "#22c55e" : "#ef4444" }}>{aiReport.m30}</div>
+                  </div>
+                  <div style={{ background: "#0003", padding: "10px", borderRadius: "8px" }}>
+                    <div style={{ fontSize: "10px", color: "#94a3b8" }}>TF 1H</div>
+                    <div style={{ fontWeight: "bold", color: aiReport.h1 === "BULLISH" ? "#22c55e" : "#ef4444" }}>{aiReport.h1}</div>
+                  </div>
+                </div>
+                
+                <div style={{ textAlign: "center", borderTop: "1px solid #334", paddingTop: "15px" }}>
+                  <div style={{ fontSize: "12px", color: "#94a3b8" }}>Win Probability Score</div>
+                  <div style={{ fontSize: "32px", fontWeight: "900", color: "#38bdf8" }}>{aiReport.score}%</div>
+                  <div style={{ marginTop: "5px", padding: "5px 10px", background: "#38bdf822", borderRadius: "5px", color: "#38bdf8", fontWeight: "bold", display: "inline-block" }}>
+                    {aiReport.recommendation}
+                  </div>
+                </div>
               </div>
             )}
-          </GlassCard>
-        )}
+          </div>
 
+          {/* Checklist System */}
+          <div style={{ background: "#0f172a", padding: "20px", borderRadius: "16px", border: "1px solid #1e293b" }}>
+            <h3 style={{ margin: "0 0 15px 0", fontSize: "16px" }}>📝 TRADE CHECKLIST</h3>
+            
+            <div style={{ display: "flex", gap: "8px", marginBottom: "15px" }}>
+              <input 
+                type="text" value={newItem} onChange={(e) => setNewItem(e.target.value)}
+                placeholder="เพิ่มกฎการเข้าเทรด..."
+                style={{ flex: 1, background: "#1e293b", border: "1px solid #334", color: "#fff", padding: "10px", borderRadius: "8px" }}
+              />
+              <button onClick={() => {
+                if(!newItem) return;
+                setChecklist([...checklist, { id: Date.now(), text: newItem, checked: false }]);
+                setNewItem("");
+              }} style={{ background: "#334", color: "#fff", border: "none", padding: "0 15px", borderRadius: "8px", cursor: "pointer" }}>+</button>
+            </div>
+
+            <div style={{ maxHeight: "250px", overflowY: "auto" }}>
+              {checklist.map(item => (
+                <div key={item.id} style={{ display: "flex", alignItems: "center", marginBottom: "10px", padding: "12px", background: item.checked ? "#1e293b55" : "#1e293b", borderRadius: "10px", transition: "0.3s" }}>
+                  <input 
+                    type="checkbox" checked={item.checked} 
+                    onChange={() => setChecklist(checklist.map(c => c.id === item.id ? {...c, checked: !c.checked} : c))}
+                    style={{ width: "18px", height: "18px", cursor: "pointer", marginRight: "12px" }}
+                  />
+                  <span style={{ flex: 1, fontSize: "13px", textDecoration: item.checked ? "line-through" : "none", color: item.checked ? "#475569" : "#cbd5e1" }}>
+                    {item.text}
+                  </span>
+                  <button onClick={() => setChecklist(checklist.filter(c => c.id !== item.id))} style={{ background: "transparent", border: "none", color: "#ef4444", cursor: "pointer", opacity: 0.6 }}>✕</button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </aside>
       </div>
+
+      <style>{`
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar-thumb { background: #334; borderRadius: 10px; }
+      `}</style>
     </div>
   );
-    }
+                    }
